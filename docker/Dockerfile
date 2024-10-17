@@ -81,7 +81,8 @@ RUN git clone https://github.com/ethereum/evmone.git --depth 1 --recurse-submodu
 RUN cd evmone && cmake -S . -B build -DEVMONE_TESTING=ON -DEVMONE_PRECOMPILES_SILKPRE=1
 RUN cd evmone && cmake --build build --parallel
 RUN cp /evmone/build/bin/evmone-statetest /evmone-statetest
-RUN cp /evmone/build/lib/libevmone.so.0.12 /libevmone.so.0.12
+RUN ls -la /evmone/build/lib/libevmone.so.* 
+RUN cp /evmone/build/lib/libevmone.so.* /
 #---------------------------------------------------------------
 # rust-builder
 #---------------------------------------------------------------
@@ -122,8 +123,8 @@ RUN mkdir /out && mv nethermind/src/Nethermind/artifacts/bin/Nethermind.Test.Run
 FROM ubuntu:23.10 as java-builder
 
 RUN apt-get update -q && apt-get install -qy --no-install-recommends git ca-certificates \
-  openjdk-17-jre-headless=17* libjemalloc-dev=5.* 
-RUN git clone https://github.com/hyperledger/besu.git  --depth 1 #--recurse-submodules
+  openjdk-22-jre-headless=22* libjemalloc-dev=5.* 
+RUN git clone https://github.com/hyperledger/besu.git --depth 1 #--recurse-submodules
 RUN cd besu && ./gradlew --parallel ethereum:evmtool:installDist
 RUN mkdir /out && mv besu/ethereum/evmtool/build/install/evmtool /out/evmtool
 
@@ -135,18 +136,23 @@ FROM debian:testing
 
 RUN apt-get update -q
 # nethtest requires libssl-dev
-# besu requires openjdk-17-jre
+# besu requires openjdk-22-jre
 # evmone requires GLIBC_2.38 (libstdc++-13-dev) (https://github.com/holiman/goevmlab/issues/144)
-# EELS requires pipx, git
+# EELS requires (see https://github.com/ethereum/execution-specs/issues/976)
+#   - pipx, git, 
+#   - curl (for installing rust),  
+#   - gcc for building 'py-arkworks-bls12381', 
+#   - python3-dev for bulding 'lru-dict'
 RUN apt-get install -qy --no-install-recommends \
 	libssl-dev  \
-	openjdk-17-jre \ 
+	openjdk-22-jre \ 
 	libstdc++-13-dev \
-	pipx git
+	pipx git curl gcc python3-dev
 
 # Install execution-specs (EELS)
-RUN git clone https://github.com/ethereum/execution-specs.git --depth 1 && \
-  PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/ pipx install './execution-specs/[test]'
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y 
+RUN git clone https://github.com/ethereum/execution-specs.git --depth 1 
+RUN . "$HOME/.cargo/env"; PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/ pipx install './execution-specs/[test]'
 ENV EELS_BIN=/ethereum-spec-evm
 
 # Go-evmlab targets
@@ -169,7 +175,7 @@ COPY --from=golang-builder /evmstate /nimbvm
 ENV NIMB_BIN=/nimbvm
 
 COPY --from=debian-builder /evmone-statetest /evmone
-COPY --from=debian-builder /libevmone.so.0.12 /lib/libevmone.so.0.12
+COPY --from=debian-builder /libevmone.so.* /lib/
 ENV EVMO_BIN=/evmone
 
 COPY --from=rust-builder /revm/target/release/revme /revme
@@ -180,8 +186,8 @@ RUN ln -s /neth/nethtest /nethtest
 ENV NETH_BIN=/neth/nethtest
 
 COPY --from=java-builder /out/evmtool /evmtool
-RUN ln -s /evmtool/bin/evm besu-vm
-ENV BESU_BIN=/evmtool/bin/evm
+RUN ln -s /evmtool/bin/evmtool besu-vm
+ENV BESU_BIN=/evmtool/bin/evmtool
 
 COPY readme_docker.md  /README.md
 

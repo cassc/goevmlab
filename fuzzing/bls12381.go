@@ -20,7 +20,6 @@ import (
 	crand "crypto/rand"
 	"math/big"
 	"math/rand"
-	"sync"
 
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/ethereum/go-ethereum/common"
@@ -37,15 +36,15 @@ type blsPrec struct {
 }
 
 var precompilesBLS = []blsPrec{
-	{10, NewG1Add, 128},   // G1Add
-	{11, NewG1Mul, 128},   // G1Mul
-	{12, NewG1Exp, 128},   // G1MultiExp
-	{13, NewG2Add, 256},   // G2Add
-	{14, NewG2Mul, 256},   // G2Mul
-	{15, NewG2Exp, 256},   // G2MultiExp
-	{16, NewPairing, 32},  // Pairing
-	{17, NewFPtoG1, 128},  // FP to G1
-	{17, NewFP2toG2, 256}, // FP2 to G2
+	{0xb, newG1Add, 128},    // G1Add
+	{0xc, newG1Mul, 128},    // G1Mul
+	{0xd, newG1Exp, 128},    // G1MultiExp
+	{0xe, newG2Add, 256},    // G2Add
+	{0xf, newG2Mul, 256},    // G2Mul
+	{0x10, newG2Exp, 256},   // G2MultiExp
+	{0x11, newPairing, 32},  // Pairing
+	{0x12, newFPtoG1, 128},  // FP to G1
+	{0x13, newFP2toG2, 256}, // FP2 to G2
 }
 
 func fillBls(gst *GstMaker, fork string) {
@@ -71,11 +70,23 @@ func fillBls(gst *GstMaker, fork string) {
 	})
 }
 
+// mutate does some bit-twiddling.
+func mutate(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	for rand.Intn(2) == 0 {
+		bit := rand.Intn(len(data) * 8) // // 13
+		data[bit/8] = data[bit/8] ^ (1 << bit % 8)
+	}
+}
+
 func RandCallBLS() []byte {
 	p := program.NewProgram()
 	offset := 0
 	for _, precompile := range precompilesBLS {
 		data := precompile.newData()
+		mutate(data) // don't always use valid data
 		p.Mstore(data, 0)
 		memInFn := func() (offset, size interface{}) {
 			offset, size = 0, len(data)
@@ -100,59 +111,59 @@ func RandCallBLS() []byte {
 	return p.Bytecode()
 }
 
-func NewG1Add() []byte {
-	a := NewG1Point()
-	b := NewG1Point()
+func newG1Add() []byte {
+	a := newG1Point()
+	b := newG1Point()
 	return append(a, b...)
 }
 
-func NewG1Mul() []byte {
-	a := NewG1Point()
+func newG1Mul() []byte {
+	a := newG1Point()
 	mul := make([]byte, 32)
 	_, _ = crand.Read(mul)
 	return append(a, mul...)
 }
 
-func NewG1Exp() []byte {
+func newG1Exp() []byte {
 	i := randInt64()
 	var res []byte
 	for k := 0; k < int(i); k++ {
-		input := NewG1Mul()
+		input := newG1Mul()
 		res = append(res, input...)
 	}
 	return res
 }
 
-func NewG2Add() []byte {
-	a := NewG2Point()
-	b := NewG2Point()
+func newG2Add() []byte {
+	a := newG2Point()
+	b := newG2Point()
 	return append(a, b...)
 }
 
-func NewG2Mul() []byte {
-	a := NewG2Point()
+func newG2Mul() []byte {
+	a := newG2Point()
 	mul := make([]byte, 32)
 	_, _ = crand.Read(mul)
 	return append(a, mul...)
 }
 
-func NewG2Exp() []byte {
+func newG2Exp() []byte {
 	i := randInt64()
 	var res []byte
 	for k := 0; k < int(i); k++ {
-		input := NewG2Mul()
+		input := newG2Mul()
 		res = append(res, input...)
 	}
 	return res
 }
 
-func NewFPtoG1() []byte {
-	return NewFieldElement()
+func newFPtoG1() []byte {
+	return newFieldElement()
 }
 
-func NewFP2toG2() []byte {
-	a := NewFieldElement()
-	b := NewFieldElement()
+func newFP2toG2() []byte {
+	a := newFieldElement()
+	b := newFieldElement()
 	return append(a, b...)
 }
 
@@ -172,19 +183,19 @@ func randInt64() int64 {
 	return rand.Int63n(150)
 }
 
-// NewPairing creates a new valid pairing.
+// newPairing creates a new valid pairing.
 // We create the following pairing:
 // e(aMul1 * G1, bMul1 * G2) * e(aMul2 * G1, bMul2 * G2) * ... * e(aMuln * G1, bMuln * G2) == e(G1, G2) ^ s
 // with s = sum(x: 1 -> n: (aMulx * bMulx))
-func NewPairing() []byte {
+func newPairing() []byte {
 	_, _, _, genG2 := bls12381.Generators()
 	pairs := randInt64()
 	var res []byte
 	target := new(big.Int)
 	// LHS: sum(x: 1->n: e(aMulx * G1, bMulx * G2))
 	for k := 0; k < int(pairs); k++ {
-		aMul := new(big.Int).SetBytes(NewFieldElement())
-		bMul := new(big.Int).SetBytes(NewFieldElement())
+		aMul := randScalar()
+		bMul := randScalar()
 		g1 := new(bls12381.G1Affine).ScalarMultiplicationBase(aMul)
 		g2 := new(bls12381.G2Affine).ScalarMultiplication(&genG2, bMul)
 		res = append(res, g1.Marshal()...)
@@ -200,54 +211,39 @@ func NewPairing() []byte {
 	return res
 }
 
-func NewFieldElement() []byte {
+func randScalar() *big.Int {
 	ret, err := crand.Int(crand.Reader, modulo)
 	if err != nil {
 		panic(err)
 	}
-	bytes := ret.Bytes()
+	return ret
+}
+
+func newFieldElement() []byte {
+	bytes := randScalar().Bytes()
 	buf := make([]byte, 48)
 	copy(buf[48-len(bytes):], bytes)
 	return buf
 }
 
-func NewG1Point() []byte {
-	a := NewFieldElement()
-	g1 := new(bls12381.G1Affine)
-	_, err := g1.SetBytes(a)
-	if err != nil {
-		panic(err)
-	}
-	return g1.Marshal()
+// newG1Point generates a random G1 and returns it as a 96-byte
+// byte slice (without point compression)
+func newG1Point() []byte {
+	s := randScalar()
+	_, _, g1Gen, _ := bls12381.Generators()
+	cp := new(bls12381.G1Affine)
+	cp.ScalarMultiplication(&g1Gen, s)
+	marshalled := cp.Marshal()
+	return marshalled[:]
 }
 
-func NewG2Point() []byte {
-	a := NewFieldElement()
-	b := NewFieldElement()
-	x := append(a, b...)
-	// Compute mapping
-	g2 := new(bls12381.G2Affine)
-	_, err := g2.SetBytes(x)
-	if err != nil {
-		panic(err)
-	}
-	return g2.Marshal()
-}
-
-type Pool[T any] struct {
-	pool sync.Pool
-}
-
-func NewPool[T any](fn func() T) Pool[T] {
-	return Pool[T]{
-		pool: sync.Pool{New: func() interface{} { return fn() }},
-	}
-}
-
-func (p *Pool[T]) Get() T {
-	return p.pool.Get().(T)
-}
-
-func (p *Pool[T]) Put(x T) {
-	p.pool.Put(x)
+// newG2Point generates a random G2 and returns it as a 192-byte
+// byte slice (without point compression)
+func newG2Point() []byte {
+	s := randScalar()
+	_, _, _, g2gen := bls12381.Generators()
+	cp := new(bls12381.G2Affine)
+	cp.ScalarMultiplication(&g2gen, s)
+	marshalled := cp.Marshal()
+	return marshalled[:]
 }

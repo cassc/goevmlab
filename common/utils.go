@@ -246,6 +246,7 @@ func RootsEqual(path string, c *cli.Context) (bool, error) {
 	for i, vm := range vms {
 		go func(index int, vm evms.Evm) {
 			root, _, err := vm.GetStateRoot(path)
+			log.Info("Root found", "stateroot", root, "vm", vm.Name(), "err", err)
 			roots[index] = root
 			errs[index] = err
 			vm.Close()

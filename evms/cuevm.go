@@ -235,20 +235,20 @@ func (evm *CuEVM) ParseStateRoot(data []byte) (root string, err error) {
 func (evm *CuEVM) RunStateTest(path string, out io.Writer, speedTest bool) (*tracingResult, error) {
 	var (
 		t0     = time.Now()
-		stderr io.ReadCloser
+		stdout io.ReadCloser
 		err    error
 		cmd    *exec.Cmd
 	)
 	cmd = exec.Command(evm.path, "--input", path)
 
-	if stderr, err = cmd.StderrPipe(); err != nil {
+	if stdout, err = cmd.StdoutPipe(); err != nil {
 		return nil, err
 	}
 	if err = cmd.Start(); err != nil {
 		return nil, err
 	}
 
-	evm.Copy(out, stderr) // stderr is used for traces as json
+	evm.Copy(out, stdout) // stdout is used for traces as json
 	err = cmd.Wait()
 	duration, slow := evm.stats.TraceDone(t0)
 

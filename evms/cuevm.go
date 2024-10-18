@@ -281,19 +281,19 @@ func (evm *CuEVM) Copy(out io.Writer, input io.Reader) {
 		if bytes.Contains(data, []byte("accounts")) {
 			if cuevmState.Accounts == nil || len(cuevmState.Accounts) == 0 {
 				if err := json.Unmarshal(data, &cuevmState); err != nil {
-					fmt.Printf("Error unmarshalling stateRoot: %v\n", err)
+					// fmt.Printf("Error unmarshalling state: %v\n", err)
 					continue
 				}
 
 				if err := cuevmState.ComputeStateRoot(); err != nil {
-					fmt.Printf("Error computing stateRoot: %+v\n", err)
+					// fmt.Printf("Error computing state: %+v\n", err)
 					continue
 				}
 			}
 		}
 		var elem opLog
 		if err := json.Unmarshal(data, &elem); err != nil {
-			fmt.Printf("cuevm err: %v, line\n\t%v\n", err, string(data))
+			// fmt.Printf("cuevm err: %v, line\n\t%v\n", err, string(data))
 			continue
 		}
 

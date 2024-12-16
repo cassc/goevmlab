@@ -49,7 +49,7 @@ type CuEVM struct {
 type account struct {
 	Address  string
 	Balance  string
-	Nonce    string
+	Nonce    uint64
 	CodeHash string            `json:"codeHash"`
 	Storage  map[string]string `json:"storage"`
 }
@@ -78,9 +78,12 @@ func padWithZeros(s string, length int) string {
 	return s
 }
 
-func addHexPrefix(s string) string {
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		return s
+func cleanHexString(s string) string {
+	s = strings.TrimPrefix(s, "0x")
+	s = strings.TrimPrefix(s, "0X")
+	s = strings.TrimLeft(s, "0")
+	if s == "" {
+		s = "0"
 	}
 	return "0x" + s
 }
@@ -103,22 +106,16 @@ func (state *cuevmState) ComputeStateRoot() error {
 	for i := range state.Accounts {
 		account := state.Accounts[i]
 		stateAccount := types.NewEmptyStateAccount()
-		nonceBig, err := uint256.FromHex(addHexPrefix(account.Nonce))
+		nonce := account.Nonce
 
-		if err != nil {
-			return errors.WithStack(err)
-		}
-
-		nonce := nonceBig.Uint64()
-
-		balance, err := uint256.FromHex(addHexPrefix(account.Balance))
+		balance, err := uint256.FromHex(cleanHexString(account.Balance))
 
 		if err != nil {
 			return errors.WithStack(err)
 		}
 
 		// skip empty account
-		if nonceBig.Eq(zero) && balance.Eq(zero) && len(account.Storage) == 0 && strings.Compare(strings.ToLower(account.CodeHash), "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470") == 0 {
+		if nonce == 0 && balance.Eq(zero) && len(account.Storage) == 0 && strings.Compare(strings.ToLower(account.CodeHash), "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470") == 0 {
 			continue
 		}
 
@@ -134,13 +131,13 @@ func (state *cuevmState) ComputeStateRoot() error {
 				continue
 			}
 
-			key, err := uint256.FromHex(addHexPrefix(storageKey))
+			key, err := uint256.FromHex(cleanHexString(storageKey))
 
 			if err != nil {
 				return errors.WithStack(err)
 			}
 
-			value, err := uint256.FromHex(addHexPrefix(storageVal))
+			value, err := uint256.FromHex(cleanHexString(storageVal))
 
 			if err != nil {
 				return errors.WithStack(err)
@@ -281,12 +278,12 @@ func (evm *CuEVM) Copy(out io.Writer, input io.Reader) {
 		if bytes.Contains(data, []byte("accounts")) {
 			if cuevmState.Accounts == nil || len(cuevmState.Accounts) == 0 {
 				if err := json.Unmarshal(data, &cuevmState); err != nil {
-					// fmt.Printf("Error unmarshalling state: %v\n", err)
+					fmt.Printf("Error unmarshalling state: %v\n", err)
 					continue
 				}
 
 				if err := cuevmState.ComputeStateRoot(); err != nil {
-					// fmt.Printf("Error computing state: %+v\n", err)
+					fmt.Printf("Error computing state: %+v\n", err)
 					continue
 				}
 			}

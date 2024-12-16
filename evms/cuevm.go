@@ -78,9 +78,12 @@ func padWithZeros(s string, length int) string {
 	return s
 }
 
-func addHexPrefix(s string) string {
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		return s
+func cleanHexString(s string) string {
+	s = strings.TrimPrefix(s, "0x")
+	s = strings.TrimPrefix(s, "0X")
+	s = strings.TrimLeft(s, "0")
+	if s == "" {
+		s = "0"
 	}
 	return "0x" + s
 }
@@ -105,7 +108,7 @@ func (state *cuevmState) ComputeStateRoot() error {
 		stateAccount := types.NewEmptyStateAccount()
 		nonce := account.Nonce
 
-		balance, err := uint256.FromHex(addHexPrefix(account.Balance))
+		balance, err := uint256.FromHex(cleanHexString(account.Balance))
 
 		if err != nil {
 			return errors.WithStack(err)
@@ -128,13 +131,13 @@ func (state *cuevmState) ComputeStateRoot() error {
 				continue
 			}
 
-			key, err := uint256.FromHex(addHexPrefix(storageKey))
+			key, err := uint256.FromHex(cleanHexString(storageKey))
 
 			if err != nil {
 				return errors.WithStack(err)
 			}
 
-			value, err := uint256.FromHex(addHexPrefix(storageVal))
+			value, err := uint256.FromHex(cleanHexString(storageVal))
 
 			if err != nil {
 				return errors.WithStack(err)
